@@ -1,6 +1,5 @@
 // PUNTO 1 - CONTADOR 0 A 9 EN DISPLAY DE 7 SEGMENTOS
-// ESP32 + 2 pulsadores + 1 display de 7 segmentos
-// Estilo ESP-IDF, usando timer para evitar delays
+// botones para ascendente y descendente
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -9,7 +8,7 @@
 #include "driver/gpio.h"
 #include "driver/timer.h"
 
-// ==================== DEFINICIÓN DE PINES ====================
+// Defino los pines
 // Segmentos del display
 #define SEG_A 4
 #define SEG_B 16
@@ -19,9 +18,9 @@
 #define SEG_F 21
 #define SEG_G 22
 
-// Pulsadores
-#define BTN_S1 32   // Incrementa
-#define BTN_S2 33   // Decrementa
+// Defino los pulsadores
+#define BTN_S1 32   // Para incrementar
+#define BTN_S2 33   // Para decrementar
 
 // Timer
 #define TIMER_DIVIDER 80              // 80 MHz / 80 = 1 MHz -> 1 tick = 1 us
