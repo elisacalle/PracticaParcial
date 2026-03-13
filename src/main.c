@@ -27,7 +27,7 @@
 #define TIMER_BASE_CLK 1000000        // 1 MHz
 #define TIMER_INTERVAL_US 20000       // 20 ms
 
-// ==================== VARIABLES GLOBALES ====================
+
 // Contador del sistema
 static volatile int contador = 0;
 
@@ -85,7 +85,7 @@ static void IRAM_ATTR timer_isr(void *arg) {
             contador = 0;
         }
 
-        actualizar_display = true;
+        actualizar_display = true; //se debe actualizar siempre
     }
 
     // Detectar flanco de bajada en S2:
@@ -98,7 +98,7 @@ static void IRAM_ATTR timer_isr(void *arg) {
             contador = 9;
         }
 
-        actualizar_display = true;
+        actualizar_display = true; //se debe actualizar siempre
     }
 
     // Guardar el estado actual para la próxima comparación
@@ -112,7 +112,7 @@ void app_main() {
     // ----------- CONFIGURACIÓN DE LOS PINES DE SALIDA -----------
     gpio_config_t out_cfg = {
         .pin_bit_mask =
-            (1ULL << SEG_A) |
+            (1ULL << SEG_A) | //la barra es cuando son varias
             (1ULL << SEG_B) |
             (1ULL << SEG_C) |
             (1ULL << SEG_D) |
@@ -125,7 +125,7 @@ void app_main() {
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    gpio_config(&out_cfg);
+    gpio_config(&out_cfg); //este siempre
 
     // ----------- CONFIGURACIÓN DE LOS PINES DE ENTRADA -----------
     gpio_config_t in_cfg = {
