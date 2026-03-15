@@ -58,13 +58,13 @@ static const uint8_t digitos[10][7] = {
 
 // ==================== FUNCIÓN PARA MOSTRAR NÚMERO ====================
 void mostrar_numero(int numero) {
-    gpio_set_level(SEG_A, digitos[numero][0]);
-    gpio_set_level(SEG_B, digitos[numero][1]);
-    gpio_set_level(SEG_C, digitos[numero][2]);
-    gpio_set_level(SEG_D, digitos[numero][3]);
-    gpio_set_level(SEG_E, digitos[numero][4]);
-    gpio_set_level(SEG_F, digitos[numero][5]);
-    gpio_set_level(SEG_G, digitos[numero][6]);
+    gpio_set_level(SEG_A, !digitos[numero][0]);
+    gpio_set_level(SEG_B, !digitos[numero][1]);
+    gpio_set_level(SEG_C, !digitos[numero][2]);
+    gpio_set_level(SEG_D, !digitos[numero][3]);
+    gpio_set_level(SEG_E, !digitos[numero][4]);
+    gpio_set_level(SEG_F, !digitos[numero][5]);
+    gpio_set_level(SEG_G, !digitos[numero][6]);
 }
 
 // ==================== ISR DEL TIMER ====================
