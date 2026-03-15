@@ -16,7 +16,7 @@
 #define SEG_D 18
 #define SEG_E 19
 #define SEG_F 21
-#define SEG_G 22
+#define SEG_G 2
 
 // Defino los pulsadores
 #define BTN_S1 32   // Para incrementar
