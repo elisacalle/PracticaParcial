@@ -70,7 +70,7 @@ void mostrar_numero(int numero) {
 // ==================== ISR DEL TIMER ====================
 // Esta rutina se ejecuta cada 20 ms.
 // Su función es revisar los botones sin usar delay.
-static void IRAM_ATTR timer_isr(void *arg) {
+static bool IRAM_ATTR timer_isr(void *arg) {
     // Leer estado actual de los botones
     bool estado_actual_s1 = gpio_get_level(BTN_S1);
     bool estado_actual_s2 = gpio_get_level(BTN_S2);
@@ -104,6 +104,8 @@ static void IRAM_ATTR timer_isr(void *arg) {
     // Guardar el estado actual para la próxima comparación
     estado_anterior_s1 = estado_actual_s1;
     estado_anterior_s2 = estado_actual_s2;
+
+    return false;
 }
 
 // ==================== FUNCIÓN PRINCIPAL ====================
