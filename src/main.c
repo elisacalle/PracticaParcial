@@ -1,3 +1,4 @@
+/*
 // PUNTO 1 - CONTADOR 0 A 9 EN DISPLAY DE 7 SEGMENTOS
 // botones para ascendente y descendente
 
@@ -190,6 +191,223 @@ void app_main() {
         }
 
         // Pequeña espera para no ocupar toda la CPU
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+} */
+
+
+////////////////PUNTO 2!!!!!!////////////////////////////////////////
+
+// PUNTO 2 - SEMÁFORO PEATONAL
+//-mismas librerías seimpre así no las use
+#include <stdio.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/timer.h"
+
+//================defino siempre los PINES =============
+#define LED_VERDE     25  //de un lado
+#define LED_AMARILLO  26
+#define LED_ROJO      27
+
+#define BTN_S1        32  //del otro lado
+
+// ==========defino TIMER ====================
+// 80 MHz / 80 = 1 MHz, o sea: 1 tick = 1 microsegundo
+//Piensas directamente en microsegundos.
+
+#define TIMER_DIVIDER 80
+#define TIMER_INTERVAL_US 20000   // 20 ms
+
+// ==================== TIEMPOS ====================
+// Los pongo en milisegundos
+#define TIEMPO_VERDE_MS    5000
+#define TIEMPO_AMARILLO_MS 2000
+#define TIEMPO_ROJO_MS     5000
+#define TIEMPO_EXTRA_MS    1000
+
+// ==================== ESTADOS ====================
+
+typedef enum {
+    VERDE,
+    AMARILLO,
+    ROJO
+} estado_t;
+
+static volatile estado_t estado = VERDE;
+
+static volatile int tiempo_estado = 0;
+
+static volatile bool actualizar_leds = true;
+
+static volatile bool estado_anterior_boton = 1;
+static volatile bool solicitud_peaton = false;
+static volatile int tiempo_boton = 0;
+
+
+// ==================== CONTROL DE LEDS ====================
+
+void actualizar_semaforo(estado_t e) {
+
+    gpio_set_level(LED_VERDE, 0);
+    gpio_set_level(LED_AMARILLO, 0);
+    gpio_set_level(LED_ROJO, 0);
+
+    if (e == VERDE) {
+        gpio_set_level(LED_VERDE, 1);
+    }
+
+    if (e == AMARILLO) {
+        gpio_set_level(LED_AMARILLO, 1);
+    }
+
+    if (e == ROJO) {
+        gpio_set_level(LED_ROJO, 1);
+    }
+}
+
+
+// ==================== ISR TIMER ====================
+
+static bool IRAM_ATTR timer_isr(void *arg) {
+
+    bool estado_actual = gpio_get_level(BTN_S1);
+
+    if ((estado_anterior_boton == 1) && (estado_actual == 0)) {
+
+        if (estado == VERDE) {
+            solicitud_peaton = true;
+            tiempo_boton = tiempo_estado;
+        }
+    }
+
+    estado_anterior_boton = estado_actual;
+
+    tiempo_estado += 20;
+
+    if (estado == VERDE) {
+
+        if (tiempo_estado >= TIEMPO_VERDE_MS) {
+
+            estado = AMARILLO;
+            tiempo_estado = 0;
+            solicitud_peaton = false;
+            actualizar_leds = true;
+        }
+
+        else if (solicitud_peaton &&
+                (tiempo_estado - tiempo_boton >= TIEMPO_EXTRA_MS)) {
+
+            estado = AMARILLO;
+            tiempo_estado = 0;
+            solicitud_peaton = false;
+            actualizar_leds = true;
+        }
+    }
+
+    else if (estado == AMARILLO) {
+
+        if (tiempo_estado >= TIEMPO_AMARILLO_MS) {
+
+            estado = ROJO;
+            tiempo_estado = 0;
+            actualizar_leds = true;
+        }
+    }
+
+    else if (estado == ROJO) {
+
+        if (tiempo_estado >= TIEMPO_ROJO_MS) {
+
+            estado = VERDE;
+            tiempo_estado = 0;
+            actualizar_leds = true;
+        }
+    }
+
+    return false;
+}
+
+
+// ==================== MAIN ====================
+
+void app_main() {
+
+    gpio_config_t out_cfg = {
+
+        .pin_bit_mask =
+            (1ULL << LED_VERDE) |
+            (1ULL << LED_AMARILLO) |
+            (1ULL << LED_ROJO),
+
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&out_cfg);
+
+
+    gpio_config_t in_cfg = {
+
+        .pin_bit_mask = (1ULL << BTN_S1),
+
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&in_cfg);
+
+
+    actualizar_semaforo(estado);
+
+
+    timer_config_t timer_cfg = {
+
+        .divider = TIMER_DIVIDER,
+        .counter_dir = TIMER_COUNT_UP,
+        .counter_en = TIMER_PAUSE,
+        .alarm_en = TIMER_ALARM_EN,
+        .auto_reload = true
+    };
+
+    timer_init(TIMER_GROUP_0, TIMER_0, &timer_cfg);
+
+    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
+
+    timer_set_alarm_value(
+        TIMER_GROUP_0,
+        TIMER_0,
+        TIMER_INTERVAL_US
+    );
+
+    timer_isr_callback_add(
+        TIMER_GROUP_0,
+        TIMER_0,
+        timer_isr,
+        NULL,
+        0
+    );
+
+    timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+
+    timer_start(TIMER_GROUP_0, TIMER_0);
+
+
+    while (1) {
+
+        if (actualizar_leds) {
+
+            actualizar_semaforo(estado);
+
+            actualizar_leds = false;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
