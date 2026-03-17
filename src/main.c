@@ -195,7 +195,7 @@ void app_main() {
     }
 } */
 
-
+/*
 ////////////////PUNTO 2!!!!!!////////////////////////////////////////
 
 // PUNTO 2 - SEMÁFORO PEATONAL
@@ -230,21 +230,21 @@ void app_main() {
 
 // ==================== ESTADOS ====================
 
-typedef enum {
+typedef enum { //Agrupa opciones fijas
     VERDE,
     AMARILLO,
     ROJO
-} estado_t;
+} estado_t; //tipo de dato para guardar en el estado del semáforo
 
-static volatile estado_t estado = VERDE;
+static volatile estado_t estado = VERDE; //variable principal del semáforo, inicia en verde
 
-static volatile int tiempo_estado = 0;
+static volatile int tiempo_estado = 0; //guarda cuanto tiempo en el estado actual, para cambiar de color
 
-static volatile bool actualizar_leds = true;
+static volatile bool actualizar_leds = true; //es una bandera
 
-static volatile bool estado_anterior_boton = 1;
-static volatile bool solicitud_peaton = false;
-static volatile int tiempo_boton = 0;
+static volatile bool estado_anterior_boton = 1; //para detectar cuando presiona
+static volatile bool solicitud_peaton = false;  //guarda si ya hubo solicitud o no
+static volatile int tiempo_boton = 0; //guarda el tiempo en que se presionó
 
 
 // ==================== CONTROL DE LEDS ====================
@@ -255,7 +255,7 @@ void actualizar_semaforo(estado_t e) {
     gpio_set_level(LED_AMARILLO, 0);
     gpio_set_level(LED_ROJO, 0);
 
-    if (e == VERDE) {
+    if (e == VERDE) { //prenda cada led
         gpio_set_level(LED_VERDE, 1);
     }
 
@@ -271,63 +271,62 @@ void actualizar_semaforo(estado_t e) {
 
 // ==================== ISR TIMER ====================
 
-static bool IRAM_ATTR timer_isr(void *arg) {
+static bool IRAM_ATTR timer_isr(void *arg) { //siemmpre lo defino así
 
-    bool estado_actual = gpio_get_level(BTN_S1);
+    bool estado_actual = gpio_get_level(BTN_S1); //va a captar en que estado el botón
 
-    if ((estado_anterior_boton == 1) && (estado_actual == 0)) {
+    if ((estado_anterior_boton == 1) && (estado_actual == 0)) { //detecta flanco de bajada
 
-        if (estado == VERDE) {
-            solicitud_peaton = true;
-            tiempo_boton = tiempo_estado;
+        if (estado == VERDE) { //si se presiona solo me importa si está en verde, de resto no porque los peatones pueden pasar
+            solicitud_peaton = true; //se activo la solicitud por el botón
+            tiempo_boton = tiempo_estado; //permite calcular cuanto tiempo ha pasado desde la solicitud
         }
     }
 
-    estado_anterior_boton = estado_actual;
+    estado_anterior_boton = estado_actual; //para actualizar el estado del botón
 
-    tiempo_estado += 20;
+    tiempo_estado += 20; //aumentar el tiempo del estado actual, cronómetro interno del estado
 
     if (estado == VERDE) {
 
-        if (tiempo_estado >= TIEMPO_VERDE_MS) {
+        if (tiempo_estado >= TIEMPO_VERDE_MS) { //cuando supera tiempo de estado, pasa a amarillo 
 
             estado = AMARILLO;
             tiempo_estado = 0;
             solicitud_peaton = false;
-            actualizar_leds = true;
+            actualizar_leds = true; //tiene que actualizar
         }
 
         else if (solicitud_peaton &&
-                (tiempo_estado - tiempo_boton >= TIEMPO_EXTRA_MS)) {
-
+                (tiempo_estado - tiempo_boton >= TIEMPO_EXTRA_MS)) {//hubo solicitud, cuanto tiempo ha pasado desde que pidió cambio
             estado = AMARILLO;
-            tiempo_estado = 0;
-            solicitud_peaton = false;
+            tiempo_estado = 0; //se reinicia porque acabo de cambiar
+            solicitud_peaton = false; //borra solicitud porque ya cumplió
             actualizar_leds = true;
         }
     }
 
     else if (estado == AMARILLO) {
 
-        if (tiempo_estado >= TIEMPO_AMARILLO_MS) {
+        if (tiempo_estado >= TIEMPO_AMARILLO_MS) { //cuanto tiempo esta y si superó el tiempo en que tiene para estar ahí
 
-            estado = ROJO;
-            tiempo_estado = 0;
+            estado = ROJO; //cambia al rojo que sigue
+            tiempo_estado = 0; //reinicia para empezar a contar ahí
             actualizar_leds = true;
         }
     }
 
-    else if (estado == ROJO) {
+    else if (estado == ROJO) { //misma lógica
 
         if (tiempo_estado >= TIEMPO_ROJO_MS) {
 
-            estado = VERDE;
+            estado = VERDE; //ya cambia a verde
             tiempo_estado = 0;
             actualizar_leds = true;
         }
     }
 
-    return false;
+    return false; //siempreee
 }
 
 
@@ -335,58 +334,58 @@ static bool IRAM_ATTR timer_isr(void *arg) {
 
 void app_main() {
 
-    gpio_config_t out_cfg = {
+    gpio_config_t out_cfg = { //configuración del out
 
         .pin_bit_mask =
-            (1ULL << LED_VERDE) |
+            (1ULL << LED_VERDE) | //siempre declaro así
             (1ULL << LED_AMARILLO) |
             (1ULL << LED_ROJO),
 
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .mode = GPIO_MODE_OUTPUT, //modo out
+        .pull_up_en = GPIO_PULLUP_DISABLE, 
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE //siempreee estos tres disable
+    }; 
+
+    gpio_config(&out_cfg); //siempre esto
+
+
+    gpio_config_t in_cfg = { //modo in
+
+        .pin_bit_mask = (1ULL << BTN_S1), //es lo único que entra, si tuviera más botones, aquí
+
+        .mode = GPIO_MODE_INPUT, //modo in
+        .pull_up_en = GPIO_PULLUP_ENABLE, //este enable los otros disable
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    gpio_config(&out_cfg);
+    gpio_config(&in_cfg); //siempre pongo esto al final
 
 
-    gpio_config_t in_cfg = {
+    actualizar_semaforo(estado); //siempre mantengo actualizando, de eso depende
 
-        .pin_bit_mask = (1ULL << BTN_S1),
 
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
+    timer_config_t timer_cfg = { //siempre denomino así el timer
+
+        .divider = TIMER_DIVIDER, // lo defini antes = 80
+        .counter_dir = TIMER_COUNT_UP, //Va a contar hacia arriba
+        .counter_en = TIMER_PAUSE, //se configura inicialmente en pausa
+        .alarm_en = TIMER_ALARM_EN,//se activa la alarma del timer
+        .auto_reload = true //se reinicie automáticamente
     };
 
-    gpio_config(&in_cfg);
+    timer_init(TIMER_GROUP_0, TIMER_0, &timer_cfg); //siempre
 
+    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0); //lo pongo en cero
 
-    actualizar_semaforo(estado);
-
-
-    timer_config_t timer_cfg = {
-
-        .divider = TIMER_DIVIDER,
-        .counter_dir = TIMER_COUNT_UP,
-        .counter_en = TIMER_PAUSE,
-        .alarm_en = TIMER_ALARM_EN,
-        .auto_reload = true
-    };
-
-    timer_init(TIMER_GROUP_0, TIMER_0, &timer_cfg);
-
-    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
-
-    timer_set_alarm_value(
+    timer_set_alarm_value( //defino cuando se activa la alarma
         TIMER_GROUP_0,
         TIMER_0,
-        TIMER_INTERVAL_US
+        TIMER_INTERVAL_US //lo definí arriba = 20ms
     );
 
-    timer_isr_callback_add(
+    timer_isr_callback_add( //siempre va
         TIMER_GROUP_0,
         TIMER_0,
         timer_isr,
@@ -394,12 +393,12 @@ void app_main() {
         0
     );
 
-    timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+    timer_enable_intr(TIMER_GROUP_0, TIMER_0); //activo la interrupción
 
-    timer_start(TIMER_GROUP_0, TIMER_0);
+    timer_start(TIMER_GROUP_0, TIMER_0); //cada 20 ms se activa ISR
 
 
-    while (1) {
+    while (1) { //siempre aquí lo minimo
 
         if (actualizar_leds) {
 
@@ -410,4 +409,4 @@ void app_main() {
 
         vTaskDelay(pdMS_TO_TICKS(1));
     }
-}
+} */
