@@ -1,4 +1,4 @@
-
+/*
 // PUNTO 1 - CONTADOR 0 A 9 EN DISPLAY DE 7 SEGMENTOS
 // botones para ascendente y descendente
 
@@ -195,6 +195,7 @@ void app_main() {
     }
 } 
 
+*/
 
 
 
@@ -206,8 +207,7 @@ void app_main() {
 
 
 
-
-
+/*
 
 ////////////////PUNTO 2!!!!!!////////////////////////////////////////
 
@@ -424,6 +424,7 @@ void app_main() {
     }
 } 
 
+*/
 
 
 
@@ -433,8 +434,7 @@ void app_main() {
 
 
 
-
-
+/*
 
 
 //==========PUNTO 4==========================
@@ -680,14 +680,14 @@ void app_main() {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
+*/
 
 
 
 
 
 
-
-
+/*
 
 //////////////===============PUNTO 5======================
 // PUNTO 5 - ALARMA CON CUENTA REGRESIVA DE 2 DÍGITOS
@@ -973,14 +973,14 @@ void app_main() {
 }
 
 
+*/
 
 
 
 
 
 
-
-
+/*
 
 //===========INTENTO PARCIAL ===============================
 // EJERCICIO ASCENSOR 4 PISOS
@@ -1303,6 +1303,7 @@ void app_main() {
    }
 }
 
+*/
 
 
 
@@ -1365,11 +1366,11 @@ void app_main() {
 
 #define BTN_S2 33
 
-#define BTN_S3 23
+#define BTN_S3 35
 
 // LED alarma
 
-#define LED_ALARMA 13
+#define LED_ALARMA 23
 
 // ==================== TIMER ====================
 
@@ -1904,7 +1905,7 @@ void app_main() {
 
 
 
-
+/*
 
 
 // EJERCICIO PROPUESTO - SISTEMA DE LLAMADA DE TURNOS
@@ -2154,11 +2155,15 @@ void app_main() {
        vTaskDelay(pdMS_TO_TICKS(1));
    }
 }
+*/
 
 
 
 
 
+
+
+/*
 
 // EJERCICIO PROPUESTO - MARCADOR LOCAL / VISITANTE
 // Display de 4 dígitos ánodo común con 4 transistores 2N3906
@@ -2434,4 +2439,5 @@ void app_main() {
    while (1) {
        vTaskDelay(pdMS_TO_TICKS(1));
    }
-}
+} 
+*/
