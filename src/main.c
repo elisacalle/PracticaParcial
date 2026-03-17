@@ -195,6 +195,19 @@ void app_main() {
     }
 } */
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*
 ////////////////PUNTO 2!!!!!!////////////////////////////////////////
 
@@ -411,7 +424,18 @@ void app_main() {
     }
 } */
 
-//=============PUNTO 3==========================
+
+
+
+
+
+
+
+
+
+
+
+/* //=============PUNTO 3==========================
 //============PUNTO 3=========================
 //===========PUNTO 3==========================
 
@@ -435,7 +459,7 @@ void app_main() {
 #define SEG_D 18
 #define SEG_E 19
 #define SEG_F 21
-#define SEG_G 22
+#define SEG_G 2
 
 // Dígitos controlados con transistores PNP 2N3906
 #define DIG_DECENAS  25
@@ -652,4 +676,623 @@ void app_main() {
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
+} */
+
+
+
+
+
+
+
+/*
+
+
+//////////////===============PUNTO 4======================
+// PUNTO 5 - ALARMA CON CUENTA REGRESIVA DE 2 DÍGITOS
+// Display de 2 dígitos con 2N3906 para los comunes
+// S1 = INICIAR / PAUSAR / CONTINUAR
+// S2 = SILENCIAR ALARMA Y REINICIAR
+// Al llegar a 00, un LED rojo parpadea a 2 Hz
+
+#include <stdio.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/timer.h"
+
+// ==================== PINES ====================
+// Segmentos
+#define SEG_A 4
+#define SEG_B 16
+#define SEG_C 17
+#define SEG_D 18
+#define SEG_E 19
+#define SEG_F 21
+#define SEG_G 2
+
+// Comunes del display con 2N3906
+#define DIG_DECENAS  25
+#define DIG_UNIDADES 26
+
+// Botones
+#define BTN_S1 32
+#define BTN_S2 33
+
+// LED de alarma
+#define LED_ALARMA 27
+
+// ==================== TIMER ====================
+#define TIMER_DIVIDER     80
+#define TIMER_INTERVAL_US 5000   // 5 ms
+
+// ==================== CONFIGURACIÓN ====================
+#define VALOR_INICIAL 30   // entre 10 y 99
+
+// ==================== VARIABLES GLOBALES ====================
+static volatile int cuenta = VALOR_INICIAL;
+static volatile bool temporizador_activo = false;
+static volatile bool alarma_activa = false;
+
+static volatile bool mostrar_decenas = true;
+static volatile int acumulador_ms = 0;
+
+static volatile bool estado_anterior_s1 = 1;
+static volatile bool estado_anterior_s2 = 1;
+
+static volatile int bloqueo_s1_ms = 0;
+static volatile int bloqueo_s2_ms = 0;
+
+// Para el parpadeo del LED a 2 Hz
+static volatile int acumulador_alarma_ms = 0;
+static volatile bool estado_led_alarma = false;
+
+// Tabla de dígitos
+// Orden: A, B, C, D, E, F, G
+// 1 = segmento encendido
+// 0 = segmento apagado
+static const uint8_t digitos[10][7] = {
+    {1,1,1,1,1,1,0}, // 0
+    {0,1,1,0,0,0,0}, // 1
+    {1,1,0,1,1,0,1}, // 2
+    {1,1,1,1,0,0,1}, // 3
+    {0,1,1,0,0,1,1}, // 4
+    {1,0,1,1,0,1,1}, // 5
+    {1,0,1,1,1,1,1}, // 6
+    {1,1,1,0,0,0,0}, // 7
+    {1,1,1,1,1,1,1}, // 8
+    {1,1,1,1,0,1,1}  // 9
+};
+
+// ==================== CARGAR SEGMENTOS ====================
+// Display ánodo común -> segmento encendido = 0
+void cargar_segmentos(int numero) {
+    gpio_set_level(SEG_A, !digitos[numero][0]);
+    gpio_set_level(SEG_B, !digitos[numero][1]);
+    gpio_set_level(SEG_C, !digitos[numero][2]);
+    gpio_set_level(SEG_D, !digitos[numero][3]);
+    gpio_set_level(SEG_E, !digitos[numero][4]);
+    gpio_set_level(SEG_F, !digitos[numero][5]);
+    gpio_set_level(SEG_G, !digitos[numero][6]);
+}
+
+// ==================== APAGAR DÍGITOS ====================
+// Con 2N3906: apagado = 1
+void apagar_digitos(void) {
+    gpio_set_level(DIG_DECENAS, 1);
+    gpio_set_level(DIG_UNIDADES, 1);
+}
+
+// ==================== REFRESCAR DISPLAY ====================
+void refrescar_display(int valor) {
+    int decenas = valor / 10;
+    int unidades = valor % 10;
+
+    apagar_digitos();
+
+    if (mostrar_decenas) {
+        cargar_segmentos(decenas);
+        gpio_set_level(DIG_DECENAS, 0);   // activar transistor PNP
+    } else {
+        cargar_segmentos(unidades);
+        gpio_set_level(DIG_UNIDADES, 0);  // activar transistor PNP
+    }
+
+    mostrar_decenas = !mostrar_decenas;
+}
+
+// ==================== ISR TIMER ====================
+static bool IRAM_ATTR timer_isr(void *arg) {
+
+    // ---------- REFRESCAR DISPLAY ----------
+    refrescar_display(cuenta);
+
+    // ---------- ANTI-REBOTE ----------
+    if (bloqueo_s1_ms > 0) {
+        bloqueo_s1_ms -= 5;
+    }
+
+    if (bloqueo_s2_ms > 0) {
+        bloqueo_s2_ms -= 5;
+    }
+
+    // ---------- LEER BOTONES ----------
+    bool estado_actual_s1 = gpio_get_level(BTN_S1);
+    bool estado_actual_s2 = gpio_get_level(BTN_S2);
+
+    // ---------- S1: INICIAR / PAUSAR / CONTINUAR ----------
+    if ((estado_anterior_s1 == 1) && (estado_actual_s1 == 0) && (bloqueo_s1_ms == 0)) {
+
+        // Solo cambia el estado si la alarma no está activa
+        if (!alarma_activa) {
+            temporizador_activo = !temporizador_activo;
+        }
+
+        bloqueo_s1_ms = 50;
+    }
+
+    // ---------- S2: SILENCIAR ALARMA Y REINICIAR ----------
+    if ((estado_anterior_s2 == 1) && (estado_actual_s2 == 0) && (bloqueo_s2_ms == 0)) {
+        cuenta = VALOR_INICIAL;
+        temporizador_activo = false;
+        alarma_activa = false;
+        acumulador_ms = 0;
+        acumulador_alarma_ms = 0;
+        estado_led_alarma = false;
+        gpio_set_level(LED_ALARMA, 0);
+        bloqueo_s2_ms = 50;
+    }
+
+    estado_anterior_s1 = estado_actual_s1;
+    estado_anterior_s2 = estado_actual_s2;
+
+    // ---------- CUENTA REGRESIVA ----------
+    if (temporizador_activo && !alarma_activa) {
+        acumulador_ms += 5;
+
+        if (acumulador_ms >= 1000) {
+            acumulador_ms = 0;
+            cuenta--;
+
+            if (cuenta <= 0) {
+                cuenta = 0;
+                temporizador_activo = false;
+                alarma_activa = true;
+            }
+        }
+    }
+
+    // ---------- PARPADEO DE ALARMA A 2 Hz ----------
+    if (alarma_activa) {
+        acumulador_alarma_ms += 5;
+
+        // Cambia cada 250 ms -> parpadeo total de 500 ms -> 2 Hz
+        if (acumulador_alarma_ms >= 250) {
+            acumulador_alarma_ms = 0;
+            estado_led_alarma = !estado_led_alarma;
+            gpio_set_level(LED_ALARMA, estado_led_alarma);
+        }
+    }
+
+    return false;
+}
+
+// ==================== MAIN ====================
+void app_main() {
+
+    // Configurar segmentos como salida
+    gpio_config_t out_seg = {
+        .pin_bit_mask =
+            (1ULL << SEG_A) |
+            (1ULL << SEG_B) |
+            (1ULL << SEG_C) |
+            (1ULL << SEG_D) |
+            (1ULL << SEG_E) |
+            (1ULL << SEG_F) |
+            (1ULL << SEG_G),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&out_seg);
+
+    // Configurar control de dígitos como salida
+    gpio_config_t out_dig = {
+        .pin_bit_mask =
+            (1ULL << DIG_DECENAS) |
+            (1ULL << DIG_UNIDADES),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&out_dig);
+
+    // Configurar LED de alarma como salida
+    gpio_config_t out_alarm = {
+        .pin_bit_mask = (1ULL << LED_ALARMA),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&out_alarm);
+
+    // Configurar botones como entrada
+    gpio_config_t in_cfg = {
+        .pin_bit_mask =
+            (1ULL << BTN_S1) |
+            (1ULL << BTN_S2),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&in_cfg);
+
+    // Estado inicial
+    apagar_digitos();
+    cargar_segmentos(cuenta);
+    gpio_set_level(LED_ALARMA, 0);
+
+    // Configuración del timer
+    timer_config_t timer_cfg = {
+        .divider = TIMER_DIVIDER,
+        .counter_dir = TIMER_COUNT_UP,
+        .counter_en = TIMER_PAUSE,
+        .alarm_en = TIMER_ALARM_EN,
+        .auto_reload = true
+    };
+
+    timer_init(TIMER_GROUP_0, TIMER_0, &timer_cfg);
+    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
+
+    timer_set_alarm_value(
+        TIMER_GROUP_0,
+        TIMER_0,
+        TIMER_INTERVAL_US
+    );
+
+    timer_isr_callback_add(
+        TIMER_GROUP_0,
+        TIMER_0,
+        timer_isr,
+        NULL,
+        0
+    );
+
+    timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+    timer_start(TIMER_GROUP_0, TIMER_0);
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+*/
+
+
+
+
+
+
+//===========INTENTO PARCIAL ===============================
+// EJERCICIO ASCENSOR 4 PISOS
+// Display 1 = piso actual
+// Display 2 = piso destino
+// 4 botones, uno por piso
+// 1 LED verde
+// Display de 4 dígitos ánodo común usando 2 dígitos y 2 transistores 2N3906
+#include <stdio.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/timer.h"
+// ==================== PINES ====================
+// Segmentos
+#define SEG_A 4
+#define SEG_B 16
+#define SEG_C 17
+#define SEG_D 18
+#define SEG_E 19
+#define SEG_F 21
+#define SEG_G 22
+// Comunes de los dos displays (controlados con 2N3906)
+#define DIG_DISPLAY1 25
+#define DIG_DISPLAY2 26
+// LED verde
+#define LED_VERDE 27
+// Botones de pisos
+#define BTN_P1 32
+#define BTN_P2 33
+#define BTN_P3 23
+#define BTN_P4 13
+// ==================== TIMER ====================
+#define TIMER_DIVIDER     80
+#define TIMER_INTERVAL_US 5000   // 5 ms
+// ==================== ESTADOS ====================
+typedef enum {
+   ESPERA,
+   MOVIMIENTO,
+   LLEGADA
+} estado_ascensor_t;
+// ==================== VARIABLES GLOBALES ====================
+// Estado del sistema
+static volatile estado_ascensor_t estado = ESPERA;
+// Piso actual y destino
+static volatile int piso_actual = 1;
+static volatile int piso_destino = 1;
+// Valores a mostrar en los displays
+// -1 significa guion "--"
+static volatile int display1_valor = -1;
+static volatile int display2_valor = -1;
+// Multiplexación
+static volatile bool mostrar_display1 = true;
+// Temporizadores
+static volatile int acumulador_mov_ms = 0;
+static volatile int acumulador_llegada_ms = 0;
+static volatile int acumulador_parpadeo_ms = 0;
+// Estado del LED verde
+static volatile bool led_verde_estado = false;
+// Estado anterior de botones
+static volatile bool estado_anterior_p1 = 1;
+static volatile bool estado_anterior_p2 = 1;
+static volatile bool estado_anterior_p3 = 1;
+static volatile bool estado_anterior_p4 = 1;
+// Anti-rebote
+static volatile int bloqueo_p1_ms = 0;
+static volatile int bloqueo_p2_ms = 0;
+static volatile int bloqueo_p3_ms = 0;
+static volatile int bloqueo_p4_ms = 0;
+// Tabla de dígitos
+// Orden: A, B, C, D, E, F, G
+// 1 = segmento encendido
+// 0 = segmento apagado
+static const uint8_t digitos[10][7] = {
+   {1,1,1,1,1,1,0}, // 0
+   {0,1,1,0,0,0,0}, // 1
+   {1,1,0,1,1,0,1}, // 2
+   {1,1,1,1,0,0,1}, // 3
+   {0,1,1,0,0,1,1}, // 4
+   {1,0,1,1,0,1,1}, // 5
+   {1,0,1,1,1,1,1}, // 6
+   {1,1,1,0,0,0,0}, // 7
+   {1,1,1,1,1,1,1}, // 8
+   {1,1,1,1,0,1,1}  // 9
+};
+// ==================== CARGAR SEGMENTOS ====================
+// Como el display es ánodo común, segmento encendido = 0
+void cargar_segmentos(int numero) {
+   // Si numero = -1, mostrar guion
+   if (numero == -1) {
+       gpio_set_level(SEG_A, 1);
+       gpio_set_level(SEG_B, 1);
+       gpio_set_level(SEG_C, 1);
+       gpio_set_level(SEG_D, 1);
+       gpio_set_level(SEG_E, 1);
+       gpio_set_level(SEG_F, 1);
+       gpio_set_level(SEG_G, 0);   // solo g encendido
+       return;
+   }
+   gpio_set_level(SEG_A, !digitos[numero][0]);
+   gpio_set_level(SEG_B, !digitos[numero][1]);
+   gpio_set_level(SEG_C, !digitos[numero][2]);
+   gpio_set_level(SEG_D, !digitos[numero][3]);
+   gpio_set_level(SEG_E, !digitos[numero][4]);
+   gpio_set_level(SEG_F, !digitos[numero][5]);
+   gpio_set_level(SEG_G, !digitos[numero][6]);
+}
+// ==================== APAGAR DÍGITOS ====================
+// Con 2N3906: apagado = 1
+void apagar_digitos(void) {
+   gpio_set_level(DIG_DISPLAY1, 1);
+   gpio_set_level(DIG_DISPLAY2, 1);
+}
+// ==================== REFRESCAR DISPLAYS ====================
+void refrescar_displays(void) {
+   apagar_digitos();
+   if (mostrar_display1) {
+       cargar_segmentos(display1_valor);
+       gpio_set_level(DIG_DISPLAY1, 0);   // activar transistor PNP
+   } else {
+       cargar_segmentos(display2_valor);
+       gpio_set_level(DIG_DISPLAY2, 0);   // activar transistor PNP
+   }
+   mostrar_display1 = !mostrar_display1;
+}
+// ==================== ISR TIMER ====================
+static bool IRAM_ATTR timer_isr(void *arg) {
+   // ----------- MULTIPLEXACIÓN -----------
+   refrescar_displays();
+   // ----------- ANTI-REBOTE -----------
+   if (bloqueo_p1_ms > 0) bloqueo_p1_ms -= 5;
+   if (bloqueo_p2_ms > 0) bloqueo_p2_ms -= 5;
+   if (bloqueo_p3_ms > 0) bloqueo_p3_ms -= 5;
+   if (bloqueo_p4_ms > 0) bloqueo_p4_ms -= 5;
+   // ----------- LEER BOTONES -----------
+   bool estado_actual_p1 = gpio_get_level(BTN_P1);
+   bool estado_actual_p2 = gpio_get_level(BTN_P2);
+   bool estado_actual_p3 = gpio_get_level(BTN_P3);
+   bool estado_actual_p4 = gpio_get_level(BTN_P4);
+   // Solo se atienden botones en ESPERA
+   if (estado == ESPERA) {
+       // Piso 1
+       if ((estado_anterior_p1 == 1) && (estado_actual_p1 == 0) && (bloqueo_p1_ms == 0)) {
+           if (piso_actual != 1) {
+               piso_destino = 1;
+               display1_valor = piso_actual;
+               display2_valor = piso_destino;
+               estado = MOVIMIENTO;
+               acumulador_mov_ms = 0;
+           }
+           bloqueo_p1_ms = 50;
+       }
+       // Piso 2
+       if ((estado_anterior_p2 == 1) && (estado_actual_p2 == 0) && (bloqueo_p2_ms == 0)) {
+           if (piso_actual != 2) {
+               piso_destino = 2;
+               display1_valor = piso_actual;
+               display2_valor = piso_destino;
+               estado = MOVIMIENTO;
+               acumulador_mov_ms = 0;
+           }
+           bloqueo_p2_ms = 50;
+       }
+       // Piso 3
+       if ((estado_anterior_p3 == 1) && (estado_actual_p3 == 0) && (bloqueo_p3_ms == 0)) {
+           if (piso_actual != 3) {
+               piso_destino = 3;
+               display1_valor = piso_actual;
+               display2_valor = piso_destino;
+               estado = MOVIMIENTO;
+               acumulador_mov_ms = 0;
+           }
+           bloqueo_p3_ms = 50;
+       }
+       // Piso 4
+       if ((estado_anterior_p4 == 1) && (estado_actual_p4 == 0) && (bloqueo_p4_ms == 0)) {
+           if (piso_actual != 4) {
+               piso_destino = 4;
+               display1_valor = piso_actual;
+               display2_valor = piso_destino;
+               estado = MOVIMIENTO;
+               acumulador_mov_ms = 0;
+           }
+           bloqueo_p4_ms = 50;
+       }
+   }
+   // Guardar estados de botones
+   estado_anterior_p1 = estado_actual_p1;
+   estado_anterior_p2 = estado_actual_p2;
+   estado_anterior_p3 = estado_actual_p3;
+   estado_anterior_p4 = estado_actual_p4;
+   // ----------- ESTADO MOVIMIENTO -----------
+   if (estado == MOVIMIENTO) {
+       acumulador_mov_ms += 5;
+       // Cada 1 segundo el ascensor cambia de piso
+       if (acumulador_mov_ms >= 1000) {
+           acumulador_mov_ms = 0;
+           if (piso_actual < piso_destino) {
+               piso_actual++;
+           } else if (piso_actual > piso_destino) {
+               piso_actual--;
+           }
+           display1_valor = piso_actual;
+           display2_valor = piso_destino;
+           // Si llegó al destino
+           if (piso_actual == piso_destino) {
+               estado = LLEGADA;
+               acumulador_llegada_ms = 0;
+               acumulador_parpadeo_ms = 0;
+               led_verde_estado = false;
+               gpio_set_level(LED_VERDE, 0);
+               display1_valor = piso_destino;
+               display2_valor = piso_destino;
+           }
+       }
+   }
+   // ----------- ESTADO LLEGADA -----------
+   else if (estado == LLEGADA) {
+       acumulador_llegada_ms += 5;
+       acumulador_parpadeo_ms += 5;
+       // Parpadeo a 2 Hz -> cambia cada 250 ms
+       if (acumulador_parpadeo_ms >= 250) {
+           acumulador_parpadeo_ms = 0;
+           led_verde_estado = !led_verde_estado;
+           gpio_set_level(LED_VERDE, led_verde_estado);
+       }
+       // Mantener esta condición por 5 segundos
+       if (acumulador_llegada_ms >= 5000) {
+           estado = ESPERA;
+           display1_valor = -1;
+           display2_valor = -1;
+           gpio_set_level(LED_VERDE, 0);
+       }
+   }
+   return false;
+}
+// ==================== MAIN ====================
+void app_main() {
+   // ----------- CONFIGURAR SEGMENTOS COMO SALIDA -----------
+   gpio_config_t out_seg = {
+       .pin_bit_mask =
+           (1ULL << SEG_A) |
+           (1ULL << SEG_B) |
+           (1ULL << SEG_C) |
+           (1ULL << SEG_D) |
+           (1ULL << SEG_E) |
+           (1ULL << SEG_F) |
+           (1ULL << SEG_G),
+       .mode = GPIO_MODE_OUTPUT,
+       .pull_up_en = GPIO_PULLUP_DISABLE,
+       .pull_down_en = GPIO_PULLDOWN_DISABLE,
+       .intr_type = GPIO_INTR_DISABLE
+   };
+   gpio_config(&out_seg);
+   // ----------- CONFIGURAR CONTROL DE DÍGITOS COMO SALIDA -----------
+   gpio_config_t out_dig = {
+       .pin_bit_mask =
+           (1ULL << DIG_DISPLAY1) |
+           (1ULL << DIG_DISPLAY2),
+       .mode = GPIO_MODE_OUTPUT,
+       .pull_up_en = GPIO_PULLUP_DISABLE,
+       .pull_down_en = GPIO_PULLDOWN_DISABLE,
+       .intr_type = GPIO_INTR_DISABLE
+   };
+   gpio_config(&out_dig);
+   // ----------- CONFIGURAR LED VERDE COMO SALIDA -----------
+   gpio_config_t out_led = {
+       .pin_bit_mask = (1ULL << LED_VERDE),
+       .mode = GPIO_MODE_OUTPUT,
+       .pull_up_en = GPIO_PULLUP_DISABLE,
+       .pull_down_en = GPIO_PULLDOWN_DISABLE,
+       .intr_type = GPIO_INTR_DISABLE
+   };
+   gpio_config(&out_led);
+   // ----------- CONFIGURAR BOTONES COMO ENTRADA -----------
+   gpio_config_t in_cfg = {
+       .pin_bit_mask =
+           (1ULL << BTN_P1) |
+           (1ULL << BTN_P2) |
+           (1ULL << BTN_P3) |
+           (1ULL << BTN_P4),
+       .mode = GPIO_MODE_INPUT,
+       .pull_up_en = GPIO_PULLUP_ENABLE,
+       .pull_down_en = GPIO_PULLDOWN_DISABLE,
+       .intr_type = GPIO_INTR_DISABLE
+   };
+   gpio_config(&in_cfg);
+   // Estado inicial
+   display1_valor = -1;
+   display2_valor = -1;
+   gpio_set_level(LED_VERDE, 0);
+   // ----------- CONFIGURACIÓN DEL TIMER -----------
+   timer_config_t timer_cfg = {
+       .divider = TIMER_DIVIDER,
+       .counter_dir = TIMER_COUNT_UP,
+       .counter_en = TIMER_PAUSE,
+       .alarm_en = TIMER_ALARM_EN,
+       .auto_reload = true
+   };
+   timer_init(TIMER_GROUP_0, TIMER_0, &timer_cfg);
+   timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
+   timer_set_alarm_value(
+       TIMER_GROUP_0,
+       TIMER_0,
+       TIMER_INTERVAL_US
+   );
+   timer_isr_callback_add(
+       TIMER_GROUP_0,
+       TIMER_0,
+       timer_isr,
+       NULL,
+       0
+   );
+   timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+   timer_start(TIMER_GROUP_0, TIMER_0);
+   while (1) {
+       vTaskDelay(pdMS_TO_TICKS(1));
+   }
 }
