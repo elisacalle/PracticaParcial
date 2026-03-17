@@ -410,3 +410,246 @@ void app_main() {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 } */
+
+//=============PUNTO 3==========================
+//============PUNTO 3=========================
+//===========PUNTO 3==========================
+
+// PUNTO 4 - CRONÓMETRO 00 A 59 SEGUNDOS
+// Display de 2 dígitos usando 2N3906 para activar los comunes
+// S1 = START / STOP
+// S2 = RESET
+
+#include <stdio.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/timer.h"
+
+// ==================== DEFINICIÓN DE PINES ====================
+// Segmentos
+#define SEG_A 4
+#define SEG_B 16
+#define SEG_C 17
+#define SEG_D 18
+#define SEG_E 19
+#define SEG_F 21
+#define SEG_G 22
+
+// Dígitos controlados con transistores PNP 2N3906
+#define DIG_DECENAS  25
+#define DIG_UNIDADES 26
+
+// Botones
+#define BTN_S1 32
+#define BTN_S2 33
+
+// ==================== TIMER ====================
+#define TIMER_DIVIDER     80
+#define TIMER_INTERVAL_US 5000   // 5 ms
+
+// ==================== VARIABLES GLOBALES ====================
+static volatile int segundos = 0;
+static volatile bool cronometro_activo = false;
+
+static volatile bool mostrar_decenas = true;
+static volatile int acumulador_ms = 0;
+
+static volatile bool estado_anterior_s1 = 1;
+static volatile bool estado_anterior_s2 = 1;
+
+static volatile int bloqueo_s1_ms = 0;
+static volatile int bloqueo_s2_ms = 0;
+
+// Tabla de dígitos
+// Orden: A, B, C, D, E, F, G
+// 1 = segmento encendido
+// 0 = segmento apagado
+static const uint8_t digitos[10][7] = {
+    {1,1,1,1,1,1,0}, // 0
+    {0,1,1,0,0,0,0}, // 1
+    {1,1,0,1,1,0,1}, // 2
+    {1,1,1,1,0,0,1}, // 3
+    {0,1,1,0,0,1,1}, // 4
+    {1,0,1,1,0,1,1}, // 5
+    {1,0,1,1,1,1,1}, // 6
+    {1,1,1,0,0,0,0}, // 7
+    {1,1,1,1,1,1,1}, // 8
+    {1,1,1,1,0,1,1}  // 9
+};
+
+// ==================== CARGAR SEGMENTOS ====================
+// Como es ánodo común, segmento encendido = 0
+void cargar_segmentos(int numero) {
+    gpio_set_level(SEG_A, !digitos[numero][0]);
+    gpio_set_level(SEG_B, !digitos[numero][1]);
+    gpio_set_level(SEG_C, !digitos[numero][2]);
+    gpio_set_level(SEG_D, !digitos[numero][3]);
+    gpio_set_level(SEG_E, !digitos[numero][4]);
+    gpio_set_level(SEG_F, !digitos[numero][5]);
+    gpio_set_level(SEG_G, !digitos[numero][6]);
+}
+
+// ==================== APAGAR DÍGITOS ====================
+// Como usamos 2N3906, apagar dígito = GPIO en 1
+void apagar_digitos(void) {
+    gpio_set_level(DIG_DECENAS, 1);
+    gpio_set_level(DIG_UNIDADES, 1);
+}
+
+// ==================== REFRESCAR DISPLAY ====================
+void refrescar_display(int valor) {
+    int decenas = valor / 10;
+    int unidades = valor % 10;
+
+    apagar_digitos();
+
+    if (mostrar_decenas) {
+        cargar_segmentos(decenas);
+        gpio_set_level(DIG_DECENAS, 0);   // activa transistor PNP
+    } else {
+        cargar_segmentos(unidades);
+        gpio_set_level(DIG_UNIDADES, 0);  // activa transistor PNP
+    }
+
+    mostrar_decenas = !mostrar_decenas;
+}
+
+// ==================== ISR TIMER ====================
+static bool IRAM_ATTR timer_isr(void *arg) {
+
+    // Refrescar display por multiplexación
+    refrescar_display(segundos);
+
+    // Anti-rebote
+    if (bloqueo_s1_ms > 0) {
+        bloqueo_s1_ms -= 5;
+    }
+
+    if (bloqueo_s2_ms > 0) {
+        bloqueo_s2_ms -= 5;
+    }
+
+    // Leer botones
+    bool estado_actual_s1 = gpio_get_level(BTN_S1);
+    bool estado_actual_s2 = gpio_get_level(BTN_S2);
+
+    // START / STOP
+    if ((estado_anterior_s1 == 1) && (estado_actual_s1 == 0) && (bloqueo_s1_ms == 0)) {
+        cronometro_activo = !cronometro_activo;
+        bloqueo_s1_ms = 50;
+    }
+
+    // RESET
+    if ((estado_anterior_s2 == 1) && (estado_actual_s2 == 0) && (bloqueo_s2_ms == 0)) {
+        segundos = 0;
+        acumulador_ms = 0;
+        bloqueo_s2_ms = 50;
+    }
+
+    estado_anterior_s1 = estado_actual_s1;
+    estado_anterior_s2 = estado_actual_s2;
+
+    // Contador de tiempo
+    if (cronometro_activo) {
+        acumulador_ms += 5;
+
+        if (acumulador_ms >= 1000) {
+            acumulador_ms = 0;
+            segundos++;
+
+            if (segundos > 59) {
+                segundos = 0;
+            }
+        }
+    }
+
+    return false;
+}
+
+// ==================== MAIN ====================
+void app_main() {
+
+    // Configurar segmentos como salida
+    gpio_config_t out_seg = {
+        .pin_bit_mask =
+            (1ULL << SEG_A) |
+            (1ULL << SEG_B) |
+            (1ULL << SEG_C) |
+            (1ULL << SEG_D) |
+            (1ULL << SEG_E) |
+            (1ULL << SEG_F) |
+            (1ULL << SEG_G),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&out_seg);
+
+    // Configurar pines que controlan bases de transistores
+    gpio_config_t out_dig = {
+        .pin_bit_mask =
+            (1ULL << DIG_DECENAS) |
+            (1ULL << DIG_UNIDADES),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&out_dig);
+
+    // Configurar botones
+    gpio_config_t in_cfg = {
+        .pin_bit_mask =
+            (1ULL << BTN_S1) |
+            (1ULL << BTN_S2),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&in_cfg);
+
+    apagar_digitos();
+    cargar_segmentos(0);
+
+    // Configuración del timer
+    timer_config_t timer_cfg = {
+        .divider = TIMER_DIVIDER,
+        .counter_dir = TIMER_COUNT_UP,
+        .counter_en = TIMER_PAUSE,
+        .alarm_en = TIMER_ALARM_EN,
+        .auto_reload = true
+    };
+
+    timer_init(TIMER_GROUP_0, TIMER_0, &timer_cfg);
+
+    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
+
+    timer_set_alarm_value(
+        TIMER_GROUP_0,
+        TIMER_0,
+        TIMER_INTERVAL_US
+    );
+
+    timer_isr_callback_add(
+        TIMER_GROUP_0,
+        TIMER_0,
+        timer_isr,
+        NULL,
+        0
+    );
+
+    timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+
+    timer_start(TIMER_GROUP_0, TIMER_0);
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
